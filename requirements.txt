@@ -1,0 +1,9 @@
+matplotlib~=3.5.2       	  # Plotting library
+numpy~=1.22.4
+h5py~=3.6.0             	  # Data storage format
+python-dotenv~=0.20.0   	  # Configuration library
+hydra-core~=1.2.0       	  # Configuration library
+hydra-joblib-launcher~=1.2.0      # parallel jobs locally
+hydra-submitit-launcher~=1.1.6    # parallel jobs on HPC cluster
+omegaconf~=2.2.1       	 	  # Configuration library
+torch~=1.12.1+cu116

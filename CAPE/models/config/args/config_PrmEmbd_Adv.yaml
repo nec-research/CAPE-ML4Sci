@@ -1,0 +1,45 @@
+model_name: 'FNO'
+if_training: True
+continue_training: False
+batch_size: 50
+unroll_step: 20
+t_train: 200
+model_update: 1
+filename: ['1D_Advection_Sols_beta0.2.hdf5', '1D_Advection_Sols_beta0.4.hdf5', '1D_Advection_Sols_beta0.7.hdf5', '1D_Advection_Sols_beta2.0.hdf5', '1D_Advection_Sols_beta4.0.hdf5']
+single_file: True
+reduced_resolution: 8
+reduced_resolution_t: 5
+reduced_batch: 1
+epochs: 100 # 500
+learning_rate: 3.e-3
+num_workers: 0
+if_save: True
+#Unet
+in_channels: 1
+out_channels: 1
+ar_mode: False
+#FNO
+num_channels: 1
+modes: 12
+width: 20
+scheduler_step: 20 # 100
+scheduler_gamma: 0.5
+initial_step: 1  # should be the same value to unroll_step ??
+# parameter embedding
+if_param_embed: False
+widening_factor: 64  # 16
+kernel_size: 5 # 5
+num_params: 1
+num_PrmEmb_Pre: 3
+if_L1loss: 0  #1.e-3
+num_channels_PrmEmb: 1
+PrmEmb_coeff: 5.7e-5
+warmup_steps: 3
+if_11cnv: True
+if_save_data: False
+if_load_data: False
+gp_coef : 5.16e-4
+gp_kk : 4.58
+if_plot: False
+pino_coef: 0
+if_crc: True

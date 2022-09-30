@@ -1,0 +1,45 @@
+model_name: 'FNO'
+if_training: True
+continue_training: False
+batch_size: 50
+unroll_step: 20
+t_train: 100
+model_update: 1
+filename:  ['2D_CFD_Rand_M0.1_Eta1e-08_Zeta1e-08_periodic_128_Train.hdf5', '2D_CFD_Rand_M1.0_Eta1e-08_Zeta1e-08_periodic_128_Train.hdf5', '2D_CFD_Rand_M0.1_Eta0.001_Zeta0.001_periodic_128_Train.hdf5', '2D_CFD_Rand_M1.0_Eta0.001_Zeta0.001_periodic_128_Train.hdf5', '2D_CFD_Rand_M0.1_Eta0.01_Zeta0.01_periodic_128_Train.hdf5', '2D_CFD_Rand_M1.0_Eta0.01_Zeta0.01_periodic_128_Train.hdf5', '2D_CFD_Rand_M0.1_Eta0.1_Zeta0.1_periodic_128_Train.hdf5', '2D_CFD_Rand_M1.0_Eta0.1_Zeta0.1_periodic_128_Train.hdf5', '2D_CFD_Rand_M0.1_Eta0.004_Zeta0.004_periodic_128_Train.hdf5', '2D_CFD_Rand_M1.0_Eta0.004_Zeta0.004_periodic_128_Train.hdf5', '2D_CFD_Rand_M0.1_Eta0.04_Zeta0.04_periodic_128_Train.hdf5', '2D_CFD_Rand_M1.0_Eta0.04_Zeta0.04_periodic_128_Train.hdf5']
+single_file: True
+reduced_resolution: 2  # 128 --> 64
+reduced_resolution_t: 1
+reduced_batch: 1
+epochs: 100 #500
+learning_rate: 3.e-3
+num_workers: 0
+if_save: True
+#Unet
+in_channels: 4
+out_channels: 4
+ar_mode: False
+#FNO
+num_channels: 4
+modes: 12
+width: 20
+scheduler_step: 20 # 100
+scheduler_gamma: 0.5
+initial_step: 1  # should be the same value to unroll_step ??
+# parameter embedding
+if_param_embed: False
+widening_factor: 64  # 16, 48
+kernel_size: 5 # 31, 3
+num_params: 3
+num_PrmEmb_Pre: 3 # 2, 2
+if_L1loss: 0 #1.e-3
+num_channels_PrmEmb: 1
+PrmEmb_coeff: 8.34e-5
+warmup_steps: 3
+if_11cnv: True
+if_save_data: False
+if_load_data: False
+gp_coef : 0
+gp_kk : 4.58
+if_plot: False
+pino_coef: 0
+if_crc: True
