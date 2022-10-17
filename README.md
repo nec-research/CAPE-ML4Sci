@@ -21,7 +21,7 @@ pip install -r requirements.txt
 ## Requirements
 In our paper, we used the following GPUs:  
  GeForce RTX 2080 GPU for 1D PDEs
- GeForce GTX 3090 for 2D
+ GeForce RTX 3090 for 2D
 
 ## Baseline Models
 In this work, we provide two different ML models with CAPE module to be trained and evaluated against the benchmark datasets, namely [FNO](https://arxiv.org/pdf/2010.08895.pdf) and [U-Net](https://www.sciencedirect.com/science/article/abs/pii/S0010482519301520?via%3Dihub).
