@@ -58,3 +58,9 @@ args:
     y_max: 1
     t_min: 0
     t_max: 5
+    print_interval: 50
+    nr_gt_steps: 1
+    lr_decay: 0.4
+    neighbors: 3
+    time_window: 10
+    if_conditional: False

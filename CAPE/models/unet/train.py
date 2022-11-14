@@ -52,12 +52,15 @@ import torch.nn.functional as F
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+#from torch.distributed.elastic.multiprocessing.errors import record
 
 import operator
 from functools import reduce
 from functools import partial
 
 from timeit import default_timer
+
+import optuna
 
 # torch.manual_seed(0)
 # np.random.seed(0)
@@ -112,6 +115,7 @@ def run_training(if_training,
                  train_data=None,
                  val_data=None,
                  if_save=True,
+                 if_optuna=False,
                  if_return_data=False,
                  if_11cnv=False,
                  if_save_data=False,
@@ -120,6 +124,7 @@ def run_training(if_training,
                  gp_kk=1.,
                  pino_coef=0,
                  if_crc=False,
+                 if_conditional=False
                  ):
 
     ### for distributed training
@@ -188,6 +193,10 @@ def run_training(if_training,
             print('save Train/Val data...')
             pickle.dump(train_data, open('../data/' + flnm[0][:-5] + '_Unet_Train.pickle', "wb"))
             pickle.dump(val_data, open('../data/' + flnm[0][:-5] + '_Unet_Val.pickle', "wb"))
+            # np.save('../data/' + flnm[0][:-5] + '_TrainData', train_data.data)
+            # np.save('../data/' + flnm[0][:-5] + '_TrainPrm', train_data.params)
+            # np.save('../data/' + flnm[0][:-5] + '_ValData', val_data.data)
+            # np.save('../data/' + flnm[0][:-5] + '_ValPrm', val_data.params)
     else:
         if single_file:
             # filename
@@ -199,7 +208,10 @@ def run_training(if_training,
             # filename
             model_name = flnm + '_Unet'
 
-    gen_device='cuda'
+    if if_optuna:
+        gen_device='cpu'
+    else:
+        gen_device='cuda'
 
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size,
                                                num_workers=num_workers, shuffle=True,#)
@@ -211,12 +223,15 @@ def run_training(if_training,
     ################################################################
     # training and evaluation
     ################################################################
-    _, _data, _ = next(iter(val_loader))
+    _, _data, _param = next(iter(val_loader))
     dimensions = len(_data.shape)
     print('Spatial Dimension', dimensions - 3)
     if if_param_embed and num_PrmEmb_Pre > 0:
         _num_channels = in_channels * initial_step * (num_channels_PrmEmb + 1)
         _out_channels = out_channels * (num_channels_PrmEmb + 1)
+    elif if_conditional:
+        _num_channels = (in_channels + _param.size(-1)) * initial_step
+        _out_channels = out_channels
     else:
         _num_channels = in_channels * initial_step
         _out_channels = out_channels
@@ -307,7 +322,7 @@ def run_training(if_training,
         Lx, Ly, Lz = 1., 1., 1.
         errs = metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot,
                        model_name, x_min, x_max, y_min, y_max,
-                       t_min, t_max, mode='Unet', initial_step=initial_step, t_train=t_train)
+                       t_min, t_max, mode='Unet', initial_step=initial_step, t_train=t_train, if_conditional=if_conditional)
         pickle.dump(errs, open(model_name+'.pickle', "wb"))
             
         return
@@ -411,6 +426,7 @@ def run_training(if_training,
                         # Loss calculation
                         _batch = im.size(0)
                         loss += loss_fn(im.reshape(_batch, -1), y.reshape(_batch, -1))
+                        #if im_PrmEmb is not None and t < t_train - num_channels_PrmEmb:
                         if im_PrmEmb is not None:
                             if (t < initial_step + 1 and ep < warmup_steps) or \
                                     (ep >= warmup_steps and t < t_train - num_channels_PrmEmb):
@@ -429,6 +445,7 @@ def run_training(if_training,
                             
                 train_l2_step += loss.item()
                 _batch = yy.size(0)
+                #l2_full = loss_fn(pred.reshape(batch_size, -1), yy.reshape(batch_size, -1))
                 _yy = yy[..., :t_train, :]  # if t_train is not -1
                 l2_full = loss_fn(pred.reshape(_batch, -1), _yy.reshape(_batch, -1))
                 train_l2_full += l2_full.item()
@@ -540,6 +557,18 @@ def run_training(if_training,
                 loss_PrmEmb = 0
                 loss_PINO = 0
 
+                if if_conditional:
+                    if dimensions == 4:
+                        xx = torch.cat((xx, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)), dim=-1)
+                    elif dimensions == 5:
+                        xx = torch.cat(
+                            (xx, param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2), 1)),
+                            dim=-1)
+                    elif dimensions == 6:
+                        xx = torch.cat((xx, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                       xx.size(3), xx.size(-2), 1)),
+                                       dim=-1)
+
                 # xx: input tensor (first few time steps) [b, x1, ..., xd, t_init, v]
                 # yy: target tensor [b, x1, ..., xd, t, v]
                 xx = xx.to(device)
@@ -559,6 +588,7 @@ def run_training(if_training,
                 for t in range(initial_step, t_train):
                                         
                     # Reshape input tensor into [b, x1, ..., xd, t_init*v]
+                    #inp = yy[..., t-initial_step:t, :].reshape(inp_shape)
                     inp = xx.reshape(inp_shape)
                     temp_shape = [0, -1]
                     temp_shape.extend([i for i in range(1,len(inp.shape)-1)])
@@ -573,6 +603,7 @@ def run_training(if_training,
                     temp_shape.extend([i for i in range(2,len(inp.shape))])
                     temp_shape.append(1)
                     im, im_PrmEmb = model(inp, param)
+                    #im = im + inp # im = U(t+1) - U(t)
                     im = im.permute(temp_shape).unsqueeze(-2)
 
                     # Loss calculation
@@ -598,6 +629,25 @@ def run_training(if_training,
                     # Concatenate the prediction at the current time step to be used
                     # as input for the next time step
                     # xx = torch.cat((xx[..., 1:, :], im), dim=-2)
+                    if if_conditional:
+                        if dimensions == 4:
+                            y = torch.cat((y, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)), dim=-1)
+                            im = torch.cat((im, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)), dim=-1)
+                        elif dimensions == 5:
+                            y = torch.cat(
+                                (y, param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2), 1)),
+                                dim=-1)
+                            im = torch.cat(
+                                (im, param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2), 1)),
+                                dim=-1)
+                        elif dimensions == 6:
+                            y = torch.cat((y, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                         xx.size(3), xx.size(-2), 1)),
+                                          dim=-1)
+                            im = torch.cat((im, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                         xx.size(3), xx.size(-2), 1)),
+                                          dim=-1)
+
                     if if_crc:
                         ep_norm = (ep - warmup_steps) / (epochs - warmup_steps)
                         #t_norm = ep_norm # linear
@@ -672,6 +722,18 @@ def run_training(if_training,
                     for xx, yy, param in val_loader:
                         loss = 0
 
+                        if if_conditional:
+                            if dimensions == 4:
+                                xx = torch.cat((xx, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)),
+                                               dim=-1)
+                            elif dimensions == 5:
+                                xx = torch.cat((xx, param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                         xx.size(-2), 1)), dim=-1)
+                            elif dimensions == 6:
+                                xx = torch.cat((xx,
+                                                param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                           xx.size(3), xx.size(-2), 1)),
+                                               dim=-1)
                         xx = xx.to(device)
                         yy = yy.to(device)
                         param = param.to(device)
@@ -682,6 +744,7 @@ def run_training(if_training,
                         inp_shape.append(-1)
                 
                         for t in range(initial_step, t_train):
+                            #inp = yy[..., t-initial_step:t, :].reshape(inp_shape)
                             inp = xx.reshape(inp_shape)  # auto regressive
                             temp_shape = [0, -1]
                             temp_shape.extend([i for i in range(1,len(inp.shape)-1)])
@@ -691,6 +754,7 @@ def run_training(if_training,
                             temp_shape.extend([i for i in range(2,len(inp.shape))])
                             temp_shape.append(1)
                             im, im_PrmEmb = model(inp, param)
+                            #im = im + inp  # im = U(t+1) - U(t)
                             im = im.permute(temp_shape).unsqueeze(-2)
                             _batch = im.size(0)
                             loss += loss_fn(im.reshape(_batch, -1), y.reshape(_batch, -1))
@@ -700,6 +764,21 @@ def run_training(if_training,
                                                       :].reshape(_batch, -1)).item()
 
                             pred = torch.cat((pred, im), -2)
+                            if if_conditional:
+                                if dimensions == 4:
+                                    im = torch.cat((im, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)),
+                                                   dim=-1)
+                                elif dimensions == 5:
+                                    im = torch.cat(
+                                        (im,
+                                         param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2),
+                                                                              1)),
+                                        dim=-1)
+                                elif dimensions == 6:
+                                    im = torch.cat(
+                                        (im, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                        xx.size(3), xx.size(-2), 1)),
+                                        dim=-1)
                             xx = torch.cat((xx[..., 1:, :], im), dim=-2)  # auto-regressive
             
                         val_l2_step += loss.item()
@@ -752,6 +831,9 @@ def run_training(if_training,
                       .format(ep, loss.item(), t2 - t1, train_l2_full, val_l2_full, train_l2_PrmEmb, val_l2_PrmEmb,
                               train_l2_PINO, val_l2_PINO))
 
+    if if_optuna:
+        return loss_val_min
+
     # evaluation
     checkpoint = torch.load(model_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -760,10 +842,149 @@ def run_training(if_training,
     Lx, Ly, Lz = 1., 1., 1.
     errs = metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot,
                    model_name, x_min, x_max, y_min, y_max,
-                   t_min, t_max, mode='Unet', initial_step=initial_step, t_train=t_train)
+                   t_min, t_max, mode='Unet', initial_step=initial_step, t_train=t_train, if_conditional=if_conditional)
     pickle.dump(errs, open(model_name+'.pickle', "wb"))
 
 
+def objective(trial, train_data, val_data):
+    #learning_rate = trial.suggest_loguniform('lr', 1.e-5, 1.e-1)
+    learning_rate = trial.suggest_loguniform('lr', 1.e-4, 2.e-2)
+    #learning_rate = 7.5e-4
+    #widening_factor = trial.suggest_categorical('widening_factor', [8, 16, 24, 32, 48, 64])
+    #widening_factor = trial.suggest_categorical('widening_factor', [8, 24, 32, 64, 128])
+    widening_factor = 64
+    #kernel_size = trial.suggest_categorical('kernel_size', [3, 5, 15, 31])
+    #kernel_size = trial.suggest_categorical('kernel_size', [3, 5, 7])
+    kernel_size = 5
+    #num_PrmEmb_Pre = trial.suggest_int('num_PrmEmb_Pre', 1, 5)
+    #num_PrmEmb_Pre = trial.suggest_int('num_PrmEmb_Pre', 1, 3)
+    num_PrmEmb_Pre = 1
+    #if_L1loss = trial.suggest_loguniform('L1', 1.e-6, 1.e-2)
+    if_L1loss = 0
+    #if_11cnv = trial.suggest_categorical('if_11cnv', [True, False])
+    if_11cnv = True
+    #num_channels_PrmEmb = trial.suggest_categorical('num_channels_PrmEmb', [1, 2, 4, 8, 16])
+    num_channels_PrmEmb = 1
+    #PrmEmb_coeff = trial.suggest_loguniform('PrmEmb_coef', 1.e-2, 4.e-1)
+    PrmEmb_coeff = 0
+    #warmup = trial.suggest_int('warmup', 1, 10)
+    warmup = -1
+
+    # flnm=['1D_Advection_Sols_beta0.2.hdf5', '1D_Advection_Sols_beta0.4.hdf5', '1D_Advection_Sols_beta1.0.hdf5', '1D_Advection_Sols_beta2.0.hdf5'],
+    #flnm = ['1D_Burgers_Sols_Nu0.001.hdf5', '1D_Burgers_Sols_Nu0.002.hdf5',
+    #        '1D_Burgers_Sols_Nu0.007.hdf5', '1D_Burgers_Sols_Nu0.01.hdf5',
+    #        '1D_Burgers_Sols_Nu0.02.hdf5', '1D_Burgers_Sols_Nu0.07.hdf5',
+    #        '1D_Burgers_Sols_Nu0.1.hdf5', '1D_Burgers_Sols_Nu0.2.hdf5', '1D_Burgers_Sols_Nu0.7.hdf5',
+    #        '1D_Burgers_Sols_Nu1.0.hdf5'],
+
+    val_score = run_training(if_training=True,
+                 continue_training=False,
+                 num_workers=0,
+                 initial_step=1,
+                 t_train=200,
+                 in_channels=1,
+                 out_channels=1,
+                 batch_size=100,
+                 unroll_step=20,
+                 ar_mode=False,
+                 pushforward=True,
+                 epochs=25,
+                 learning_rate=learning_rate,
+                 scheduler_step=5,
+                 scheduler_gamma=0.5,
+                 model_update=1,
+                 flnm = ['1D_Advection_Sols_beta0.2.hdf5', '1D_Advection_Sols_beta0.4.hdf5', '1D_Advection_Sols_beta1.0.hdf5', '1D_Advection_Sols_beta2.0.hdf5'],
+                 single_file=True,
+                 reduced_resolution=8,
+                 reduced_resolution_t=5,
+                 reduced_batch=10,
+                 plot=False,
+                 channel_plot=False,
+                 x_min=0.,
+                 x_max=1.,
+                 y_min=0.,
+                 y_max=1.,
+                 t_min=0.,
+                 t_max=1.,
+                 if_param_embed=False,
+                 widening_factor=widening_factor,
+                 kernel_size=kernel_size,
+                 num_params=1,
+                 num_PrmEmb_Pre=num_PrmEmb_Pre,
+                 num_channels_PrmEmb=num_channels_PrmEmb,
+                 PrmEmb_coeff=PrmEmb_coeff,
+                 warmup_steps=warmup,
+                 if_L1loss=if_L1loss,
+                 train_data=train_data,
+                 val_data=val_data,
+                 if_optuna=True,
+                 if_save=False,
+                 if_11cnv=if_11cnv
+                )
+    return val_score
+
+def perform_optuna(n_trial):
+    # flnm=['1D_Burgers_Sols_Nu0.001.hdf5', '1D_Burgers_Sols_Nu0.002.hdf5',
+    #             '1D_Burgers_Sols_Nu0.007.hdf5', '1D_Burgers_Sols_Nu0.01.hdf5',
+    #             '1D_Burgers_Sols_Nu0.02.hdf5', '1D_Burgers_Sols_Nu0.07.hdf5',
+    #             '1D_Burgers_Sols_Nu0.1.hdf5', '1D_Burgers_Sols_Nu0.2.hdf5', '1D_Burgers_Sols_Nu0.7.hdf5',
+    #             '1D_Burgers_Sols_Nu1.0.hdf5'],
+    #flnm = ['1D_Advection_Sols_beta0.2.hdf5', '1D_Advection_Sols_beta0.4.hdf5', '1D_Advection_Sols_beta1.0.hdf5','1D_Advection_Sols_beta2.0.hdf5']
+
+    train_data, val_data = run_training(if_training=True,
+                 continue_training=False,
+                 num_workers=0,
+                 initial_step=1,
+                 t_train=200,
+                 in_channels=1,
+                 out_channels=1,
+                 batch_size=100,
+                 unroll_step=20,
+                 ar_mode=True,
+                 pushforward=True,
+                 epochs=15,
+                 learning_rate=1.e-3,
+                 scheduler_step=3,
+                 scheduler_gamma=0.5,
+                 model_update=1,
+                 flnm = ['1D_Advection_Sols_beta0.2.hdf5', '1D_Advection_Sols_beta0.4.hdf5', '1D_Advection_Sols_beta1.0.hdf5','1D_Advection_Sols_beta2.0.hdf5'],
+                 single_file=True,
+                 reduced_resolution=8,
+                 reduced_resolution_t=5,
+                 reduced_batch=5,
+                 plot=False,
+                 channel_plot=False,
+                 x_min=0.,
+                 x_max=1.,
+                 y_min=0.,
+                 y_max=1.,
+                 t_min=0.,
+                 t_max=1.,
+                 if_param_embed=True,
+                 widening_factor=None,
+                 kernel_size=None,
+                 num_params=1,
+                 num_PrmEmb_Pre=None,
+                 if_L1loss=None,
+                 train_data=None,
+                 val_data=None,
+                 if_optuna=True,
+                 if_return_data=True,
+                 if_save=False
+                )
+    print('dataloaders are returned...')
+
+    _objective = lambda trial: objective(trial, train_data, val_data)
+    study = optuna.create_study()
+    study.optimize(_objective, n_trials=n_trial)
+
+    print('Acuracy: {}'.format(study.best_value))
+    print('Best hyperparameters: {}'.format(study.best_params))
+    #fname = 'Unet_vanilla_Adv_PEnewWarmup_study.pickle'
+    fname = 'Unet_vanilla_Adv_study.pickle'
+    pickle.dump(study, open(fname, 'wb'))
+
 if __name__ == "__main__":
+    
     run_training()
     print("Done.")

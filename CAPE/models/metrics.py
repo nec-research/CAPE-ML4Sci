@@ -168,12 +168,25 @@ def metric_func(pred, target, if_mean=True, Lx=1., Ly=1., Lz=1., iLow=4, iHigh=1
         return err_MSE, err_nMSE, err_CSV, err_Max, err_BD, err_F
 
 def metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot, model_name, x_min,
-            x_max, y_min, y_max, t_min, t_max, mode='FNO', initial_step=None, t_train=100000,
-            if_CAPE_score=False):
+            x_max, y_min, y_max, t_min, t_max, mode='FNO', initial_step=None, t_train=100000, if_conditional=False,
+            if_CAPE_score=False, t_res = 100, graph_creator=None):
     if mode=='Unet':
         with torch.no_grad():
             itot = 0
             for xx, yy, param in val_loader:
+                if if_conditional:
+                    dimensions = len(xx.shape)
+                    if dimensions == 4:
+                        xx = torch.cat((xx, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)), dim=-1)
+                    elif dimensions == 5:
+                        xx = torch.cat(
+                            (xx, param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2), 1)),
+                            dim=-1)
+                    elif dimensions == 6:
+                        xx = torch.cat((xx, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                       xx.size(3), xx.size(-2), 1)),
+                                       dim=-1)
+
                 xx = xx.to(device)
                 yy = yy.to(device)
 
@@ -201,6 +214,21 @@ def metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot, model_name, x_min
                     im = im.permute(temp_shape).unsqueeze(-2)
 
                     pred = torch.cat((pred, im), -2)
+                    if if_conditional:
+                        if dimensions == 4:
+                            im = torch.cat((im, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)),
+                                           dim=-1)
+                        elif dimensions == 5:
+                            im = torch.cat(
+                                (im,
+                                 param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2),
+                                                                      1)),
+                                dim=-1)
+                        elif dimensions == 6:
+                            im = torch.cat(
+                                (im, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                xx.size(3), xx.size(-2), 1)),
+                                dim=-1)
                     xx = torch.cat((xx[..., 1:, :], im), dim=-2)
 
                 _yy = yy[..., initial_step:_t_train, :]
@@ -230,11 +258,23 @@ def metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot, model_name, x_min
                     val_l2_time += torch.sqrt(torch.mean((pred-yy)**2, dim=mean_dim))
                 
                 itot += 1
-
-    elif mode=='FNO':
+    elif mode == 'FNO':
         with torch.no_grad():
             itot = 0
             for xx, yy, grid, param in val_loader:
+                if if_conditional:
+                    dimensions = len(xx.shape)
+                    if dimensions == 4:
+                        xx = torch.cat((xx, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)), dim=-1)
+                    elif dimensions == 5:
+                        xx = torch.cat(
+                            (xx, param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2), 1)),
+                            dim=-1)
+                    elif dimensions == 6:
+                        xx = torch.cat((xx, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                       xx.size(3), xx.size(-2), 1)),
+                                       dim=-1)
+
                 xx = xx.to(device)
                 yy = yy.to(device)
                 grid = grid.to(device)
@@ -252,13 +292,30 @@ def metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot, model_name, x_min
                     inp = xx.reshape(inp_shape)
                     y = yy[..., t:t + 1, :]
                     im, im_CAPE = model(inp, param, grid)
+                    if if_conditional:
+                        im = im[..., :yy.size(-1)]
+
                     if if_CAPE_score:
                         PrmEmb_size = list(xx.shape)
                         PrmEmb_size[-2] = -1
-                        pred = torch.cat((pred, im_CAPE.view(PrmEmb_size)[...,0:1, :]), -2)
-                        xx = torch.cat((xx[..., 1:, :], im_CAPE.view(PrmEmb_size)[...,0:1, :]), dim=-2)
+                        pred = torch.cat((pred, im_CAPE.view(PrmEmb_size)[..., 0:1, :]), -2)
+                        xx = torch.cat((xx[..., 1:, :], im_CAPE.view(PrmEmb_size)[..., 0:1, :]), dim=-2)
                     else:
                         pred = torch.cat((pred, im), -2)
+                        if if_conditional:
+                            if dimensions == 4:
+                                im = torch.cat((im, param[:, None, None, :].repeat(1, xx.size(1), xx.size(-2), 1)),
+                                               dim=-1)
+                            elif dimensions == 5:
+                                im = torch.cat(
+                                    (im,
+                                     param[:, None, None, None, :].repeat(1, xx.size(1), xx.size(2), xx.size(-2), 1)),
+                                    dim=-1)
+                            elif dimensions == 6:
+                                im = torch.cat(
+                                    (im, param[:, None, None, None, None, :].repeat(1, xx.size(1), xx.size(2),
+                                                                                    xx.size(3), xx.size(-2), 1)),
+                                    dim=-1)
                         xx = torch.cat((xx[..., 1:, :], im), dim=-2)
 
                 _yy = yy[..., initial_step:_t_train, :]
@@ -277,13 +334,70 @@ def metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot, model_name, x_min
                     err_Max += _err_Max
                     err_BD += _err_BD
                     err_F += _err_F
-                    
-                    mean_dim = [i for i in range(len(yy.shape)-2)]
+
+                    mean_dim = [i for i in range(len(yy.shape) - 2)]
                     mean_dim.append(-1)
                     mean_dim = tuple(mean_dim)
-                    val_l2_time += torch.sqrt(torch.mean((pred-yy)**2, dim=mean_dim))
+                    val_l2_time += torch.sqrt(torch.mean((pred - yy) ** 2, dim=mean_dim))
 
                 itot += 1
+
+    elif mode == 'MPNN':
+        for itot, (u_base, x, variables) in enumerate(val_loader):
+            u_base = u_base.transpose(1, 2).squeeze()
+            batch_size = u_base.shape[0]
+            _x_res = u_base.shape[-1]
+            with torch.no_grad():
+                for i, same_steps in enumerate(range(initial_step, t_res, graph_creator.tw)):
+                    steps = [same_steps] * batch_size
+                    data, labels = graph_creator.create_data(u_base, steps)
+                    graph = graph_creator.create_graph(data, labels, x, variables, steps).to(device)
+                    tm_max = graph.y.shape[1]
+                    im = model(graph)
+                    if i == 0:
+                        yy = labels.cuda().transpose(1, 2)[..., None]
+                        pred = im.reshape([batch_size, _x_res, -1])[..., :tm_max, None]
+                    else:
+                        yy = torch.cat((yy, labels.cuda().transpose(1, 2)[..., None]), -2)
+                        pred = torch.cat((pred, im.reshape([batch_size, _x_res, -1])[..., :tm_max, None]), -2)
+
+                ## calculate metrics
+                Lx, Ly, Lz = 1., 1., 1.
+                _err_MSE, _err_nMSE, _err_CSV, _err_Max, _err_BD, _err_F \
+                    = metric_func(pred, yy, if_mean=True, Lx=Lx, Ly=Ly, Lz=Lz)
+                if itot == 0:
+                    err_MSE, err_nMSE, err_CSV, err_Max, err_BD, err_F \
+                        = _err_MSE, _err_nMSE, _err_CSV, _err_Max, _err_BD, _err_F
+                    val_l2_time = torch.zeros(yy.shape[-2]).to(device)
+                else:
+                    err_MSE += _err_MSE
+                    err_nMSE += _err_nMSE
+                    err_CSV += _err_CSV
+                    err_Max += _err_Max
+                    err_BD += _err_BD
+                    err_F += _err_F
+
+                    mean_dim = [i for i in range(len(yy.shape) - 2)]
+                    mean_dim.append(-1)
+                    mean_dim = tuple(mean_dim)
+                    val_l2_time += torch.sqrt(torch.mean((pred - yy) ** 2, dim=mean_dim))
+
+                itot += 1
+        # special treatment for MPNN
+        err_MSE = np.array(err_MSE.data.cpu() / itot)
+        err_nMSE = np.array(err_nMSE.data.cpu() / itot)
+        err_CSV = np.array(err_CSV.data.cpu() / itot)
+        err_Max = np.array(err_Max.data.cpu() / itot)
+        err_BD = np.array(err_BD.data.cpu() / itot)
+        err_F = np.array(err_F.data.cpu() / itot)
+        print('MSE: {0:.5f}'.format(err_MSE))
+        print('normalized MSE: {0:.5f}'.format(err_nMSE))
+        print('MSE of conserved variables: {0:.5f}'.format(err_CSV))
+        print('Maximum value of rms error: {0:.5f}'.format(err_Max))
+        print('MSE at boundaries: {0:.5f}'.format(err_BD))
+        print('MSE in Fourier space: {0}'.format(err_F))
+
+        return err_MSE, err_nMSE, err_CSV, err_Max, err_BD, err_F
 
     elif mode == "PINN":
         raise NotImplementedError
@@ -300,7 +414,7 @@ def metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot, model_name, x_min
     print('Maximum value of rms error: {0:.5f}'.format(err_Max))
     print('MSE at boundaries: {0:.5f}'.format(err_BD))
     print('MSE in Fourier space: {0}'.format(err_F))
-    
+
     val_l2_time = val_l2_time/itot
     
     if plot:

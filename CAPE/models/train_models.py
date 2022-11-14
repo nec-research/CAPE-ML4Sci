@@ -39,8 +39,6 @@
 * THIS HEADER MAY NOT BE EXTRACTED OR MODIFIED IN ANY WAY.
 *
 """
-                                    
-
 import sys, os
 import hydra
 from omegaconf import DictConfig
@@ -53,7 +51,9 @@ from timeit import default_timer
 
 sys.path.append(".")
 from fno.train import run_training as run_training_FNO
+from pinn.train import run_training as run_training_PINN
 from unet.train import run_training as run_training_Unet
+from MPNN.train import run_training as run_training_MPNN
 
 @hydra.main(config_path="config", config_name="config")
 def main(cfg: DictConfig):
@@ -109,7 +109,8 @@ def main(cfg: DictConfig):
             test_ratio=cfg.args.test_ratio,
             main_loss_coef=cfg.args.main_loss_coef,
             if_TF=cfg.args.if_TF,
-            if_CAPE_score=cfg.args.if_CAPE_score
+            if_CAPE_score=cfg.args.if_CAPE_score,
+            if_conditional = cfg.args.if_conditional
         )
     elif cfg.args.model_name == "Unet":
         print("Unet")
@@ -161,8 +162,61 @@ def main(cfg: DictConfig):
             gp_kk=cfg.args.gp_kk,
             pino_coef=cfg.args.pino_coef,
             if_crc=cfg.args.if_crc,
+            if_conditional=cfg.args.if_conditional
         )
-
+    elif cfg.args.model_name == "PINN":
+        print("PINN")
+        run_training_PINN(
+            scenario=cfg.args.scenario,
+            epochs=cfg.args.epochs,
+            learning_rate=cfg.args.learning_rate,
+            model_update=cfg.args.model_update,
+            flnm=cfg.args.filename,
+            input_ch=cfg.args.input_ch,
+            output_ch=cfg.args.output_ch,
+            root_path=cfg.args.root_path,
+            val_num=cfg.args.val_num,
+            if_periodic_bc=cfg.args.if_periodic_bc,
+            aux_params=cfg.args.aux_params,
+            seed=cfg.args.seed
+        )
+    elif cfg.args.model_name == "MPNN":
+        print("MPNN")
+        run_training_MPNN(
+            if_training=cfg.args.if_training,
+            num_workers=cfg.args.num_workers,
+            initial_step=cfg.args.initial_step,
+            t_train=cfg.args.t_train,
+            batch_size=cfg.args.batch_size,
+            unroll_step=cfg.args.unroll_step,
+            epochs=cfg.args.epochs,
+            learning_rate=cfg.args.learning_rate,
+            scheduler_step=cfg.args.scheduler_step,
+            scheduler_gamma=cfg.args.scheduler_gamma,
+            model_update=cfg.args.model_update,
+            flnm=cfg.args.filename,
+            single_file=cfg.args.single_file,
+            reduced_resolution=cfg.args.reduced_resolution,
+            reduced_resolution_t=cfg.args.reduced_resolution_t,
+            reduced_batch=cfg.args.reduced_batch,
+            plot=cfg.args.plot,
+            channel_plot=cfg.args.channel_plot,
+            x_min=cfg.args.x_min,
+            x_max=cfg.args.x_max,
+            y_min=cfg.args.y_min,
+            y_max=cfg.args.y_max,
+            t_min=cfg.args.t_min,
+            t_max=cfg.args.t_max,
+            if_save=cfg.args.if_save,
+            if_save_data=cfg.args.if_save_data,
+            if_load_data=cfg.args.if_load_data,
+            print_interval=cfg.args.print_interval,
+            nr_gt_steps=cfg.args.nr_gt_steps,
+            lr_decay=cfg.args.lr_decay,
+            neighbors=cfg.args.neighbors,
+            time_window=cfg.args.time_window,
+            if_param_embed = cfg.args.if_param_embed
+            )
 
 if __name__ == "__main__":
     main()
