@@ -40,7 +40,7 @@ sh run_training_PrmEmb_Adv.sh
 
 ## Code contributors
 
-* Deleted for purposes of Anonymity
+* Makoto Takamoto (NEC Laboratories Europe GmbH)
 
 ## License 
-MIT for solver code and baseline code, and Anonymised License for selected code 
+MIT for solver code and baseline code, and NLE Academic License for selected code 
