@@ -7,6 +7,7 @@ In this work, we provide a code to reproduce the above paper experiments.
 This repository consists of the codes training and evaluating different machine learning models as baseline.
 
 ![Visualizations of CAPE module.](/fig-cape-module.PNG)
+![Visualizations of CAPE module function.](/CAPE-function-pic.PNG)
 
 ## Dataset
 
