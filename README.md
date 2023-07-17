@@ -6,7 +6,8 @@ This repository contains the code for the ICML 2023 paper:
 In this work, we provide a code to reproduce the above paper experiments. 
 This repository consists of the codes training and evaluating different machine learning models as baseline.
 
-![Visualizations of some PDE problems covered by the benchmark.](https://github.com/nec-research/CAPE-ML4Sci/blob/main/fig-cape-module.pdf)
+<!---![Visualizations of some PDE problems covered by the benchmark.](https://github.com/nec-research/CAPE-ML4Sci/blob/main/fig-cape-module.pdf) --->
+![Visualizations of some PDE problems covered by the benchmark.](https://github.com/nec-research/CAPE-ML4Sci/fig-cape-module.pdf)
 
 ## Dataset
 
