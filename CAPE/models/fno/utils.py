@@ -158,6 +158,8 @@ import torch
 from torch.utils.data import Dataset, IterableDataset
 from torch.utils.data import DataLoader
 
+random.seed(2023)
+
 
 class FNODatasetSingle(Dataset):
     def __init__(self, filename,
@@ -166,7 +168,12 @@ class FNODatasetSingle(Dataset):
                  reduced_resolution=1,
                  reduced_resolution_t=1,
                  reduced_batch=1,
-                 if_test=False, test_ratio=0.1,
+                 if_test=False,
+                 if_val=False,
+                 if_use_val=False,
+                 if_CV=False,
+                 n_CV_itr=1,
+                 test_ratio=0.1,
                  indexes=None
                  ):
         """
@@ -243,6 +250,16 @@ class FNODatasetSingle(Dataset):
         else:
             self.data = self.data[test_idx:]
             self.params = self.params[test_idx:]
+            if if_use_val:
+                if if_CV:
+                    _n_CV_itr = min(n_CV_itr, int(1 / test_ratio))
+                else:
+                    _n_CV_itr = 0
+                train, val = self.custom_cv_kfolds(self.data, n_itr=_n_CV_itr, N_cv=int(1 / test_ratio))
+                if if_val:
+                    self.data = val
+                else:
+                    self.data = train
 
         # Time steps used as initial conditions
         self.initial_step = initial_step
@@ -425,6 +442,20 @@ class FNODatasetSingle(Dataset):
     def __getitem__(self, idx):
         
         return self.data[idx,...,:self.initial_step,:], self.data[idx], self.grid, self.params[idx]
+
+    @staticmethod
+    def custom_cv_kfolds(data, n_itr, N_cv):
+        nb = data.shape[0]
+        ncv = nb // N_cv
+        if n_itr == 0:
+            return data[ncv:], data[:ncv]
+        elif n_itr == N_cv - 1:
+            return data[:-ncv], data[-ncv:]
+        else:
+            train_1 = data[:(n_itr + 1)*ncv]
+            train_2 = data[(n_itr + 2)*ncv:]
+            train = np.concatenate([train_1, train_2], axis=0)
+            return train, data[(n_itr + 1)*ncv:(n_itr + 2)*ncv]
 
 
 class FNODatasetMult(Dataset):

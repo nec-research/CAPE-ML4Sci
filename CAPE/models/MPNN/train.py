@@ -191,6 +191,9 @@ def run_training(if_training,
                  reduced_resolution,
                  reduced_resolution_t,
                  reduced_batch,
+                 if_use_val,
+                 if_CV,
+                 n_CV_itr,
                  plot,
                  channel_plot,
                  x_min,
@@ -241,17 +244,38 @@ def run_training(if_training,
                                            reduced_resolution=reduced_resolution,
                                            reduced_resolution_t=reduced_resolution_t,
                                            reduced_batch=reduced_batch,
+                                           if_use_val=if_use_val,
+                                           if_CV=if_CV,
+                                           n_CV_itr=n_CV_itr,
                                            initial_step=initial_step,
                                            if_param_embed=if_param_embed)
-            val_data = MPNNDatasetSingle(flnm,
+            test_data = MPNNDatasetSingle(flnm,
                                          reduced_resolution=reduced_resolution,
                                          reduced_resolution_t=reduced_resolution_t,
                                          reduced_batch=reduced_batch,
+                                         if_use_val=if_use_val,
+                                         if_CV=if_CV,
+                                         n_CV_itr=n_CV_itr,
                                          initial_step=initial_step,
                                          if_test=True,
                                          if_param_embed=if_param_embed
                                          )
-        
+            if if_use_val:
+                val_data = MPNNDatasetSingle(flnm,
+                                      reduced_resolution=reduced_resolution,
+                                      reduced_resolution_t=reduced_resolution_t,
+                                      reduced_batch=reduced_batch,
+                                      initial_step=initial_step,
+                                      if_use_val=if_use_val,
+                                      if_CV=if_CV,
+                                      n_CV_itr=n_CV_itr,
+                                      if_val=True,
+                                      if_param_embed=if_param_embed
+                                      )
+
+            else:  # validation = test
+                val_data = test_data
+
         else:
             # filename
             model_name = flnm + '_MPNN'
@@ -260,19 +284,27 @@ def run_training(if_training,
                                          reduced_resolution=reduced_resolution,
                                          reduced_resolution_t=reduced_resolution_t,
                                          reduced_batch=reduced_batch)
-            val_data = MPNNDatasetMult(flnm,
+            test_data = MPNNDatasetMult(flnm,
                                        reduced_resolution=reduced_resolution,
                                        reduced_resolution_t=reduced_resolution_t,
                                        reduced_batch=reduced_batch,
                                        if_test=True,
                                        indexes=train_data.indexes)
+
+            val_data = test_data
+
         if if_return_data:
-            return train_data, val_data
+            if if_use_val:
+                return train_data, val_data, test_data
+            else:
+                return train_data, val_data
 
         if if_save_data:
             print('save Train/Val data...')
             pickle.dump(train_data, open('../data/' + flnm[0][:-5] + '_MPNN_Train.pickle', "wb"))
             pickle.dump(val_data, open('../data/' + flnm[0][:-5] + '_MPNN_Val.pickle', "wb"))
+            if if_use_val:
+                pickle.dump(test_data, open('../data/' + flnm[0][:-5] + '_Unet_Test.pickle', "wb"))
             # np.save('../data/' + flnm[0][:-5] + '_TrainData', train_data.data)
             # np.save('../data/' + flnm[0][:-5] + '_TrainPrm', train_data.params)
             # np.save('../data/' + flnm[0][:-5] + '_ValData', val_data.data)
@@ -294,6 +326,9 @@ def run_training(if_training,
                                                num_workers=num_workers, shuffle=True,#)
                                                generator=torch.Generator(device=gen_device))
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=batch_size,
+                                             num_workers=num_workers, shuffle=False,#)
+                                             generator=torch.Generator(device=gen_device))
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size,
                                              num_workers=num_workers, shuffle=False,#)
                                              generator=torch.Generator(device=gen_device))
 
@@ -350,11 +385,11 @@ def run_training(if_training,
         model.to(device)
         model.eval()
         Lx, Ly, Lz = 1., 1., 1.
-        errs = metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot,
+        errs = metrics(test_loader, model, Lx, Ly, Lz, plot, channel_plot,
                        model_name, x_min, x_max, y_min, y_max,
                        t_min, t_max, mode='MPNN', initial_step=initial_step, t_train=t_train,
                        t_res=pde['t_res'], graph_creator=graph_creator)
-        pickle.dump(errs, open(model_name + '.pickle', "wb"))
+        pickle.dump(errs, open(model_name + '_test.pickle', "wb"))
 
         return
     ######  needing to modify
@@ -402,7 +437,7 @@ def run_training(if_training,
                    model_name, x_min, x_max, y_min, y_max,
                    t_min, t_max, mode='MPNN', initial_step=initial_step, t_train=t_train,
                    t_res = pde['t_res'], graph_creator=graph_creator)
-    pickle.dump(errs, open(model_name+'.pickle', "wb"))
+    pickle.dump(errs, open(model_name+'_val.pickle', "wb"))
     ######  needing to modify
 
 if __name__ == "__main__":

@@ -201,6 +201,9 @@ def run_training(if_training,
                  reduced_resolution,
                  reduced_resolution_t,
                  reduced_batch,
+                 if_use_val,
+                 if_CV,
+                 n_CV_itr,
                  plot,
                  channel_plot,
                  x_min,
@@ -270,14 +273,36 @@ def run_training(if_training,
                                            reduced_resolution=reduced_resolution,
                                            reduced_resolution_t=reduced_resolution_t,
                                            reduced_batch=reduced_batch,
-                                           initial_step=initial_step)
-            val_data = UNetDatasetSingle(flnm,
-                                         reduced_resolution=reduced_resolution,
-                                         reduced_resolution_t=reduced_resolution_t,
-                                         reduced_batch=reduced_batch,
-                                         initial_step=initial_step,
-                                         if_test=True)
-        
+                                           initial_step=initial_step,
+                                           if_use_val=if_use_val,
+                                           if_CV=if_CV,
+                                           n_CV_itr=n_CV_itr
+                                           )
+            test_data = UNetDatasetSingle(flnm,
+                                          reduced_resolution=reduced_resolution,
+                                          reduced_resolution_t=reduced_resolution_t,
+                                          reduced_batch=reduced_batch,
+                                          initial_step=initial_step,
+                                          if_use_val=if_use_val,
+                                          if_CV=if_CV,
+                                          n_CV_itr=n_CV_itr,
+                                          if_test=True)
+
+            if if_use_val:
+                val_data = UNetDatasetSingle(flnm,
+                                      reduced_resolution=reduced_resolution,
+                                      reduced_resolution_t=reduced_resolution_t,
+                                      reduced_batch=reduced_batch,
+                                      initial_step=initial_step,
+                                      if_use_val=if_use_val,
+                                      if_CV=if_CV,
+                                      n_CV_itr=n_CV_itr,
+                                      if_val=True
+                                      )
+
+            else:  # validation = test
+                val_data = test_data
+
         else:
             # filename
             model_name = flnm + '_Unet'
@@ -286,19 +311,25 @@ def run_training(if_training,
                                          reduced_resolution=reduced_resolution,
                                          reduced_resolution_t=reduced_resolution_t,
                                          reduced_batch=reduced_batch)
-            val_data = UNetDatasetMult(flnm,
+            test_data = UNetDatasetMult(flnm,
                                        reduced_resolution=reduced_resolution,
                                        reduced_resolution_t=reduced_resolution_t,
                                        reduced_batch=reduced_batch,
                                        if_test=True,
                                        indexes=train_data.indexes)
+            val_data = test_data
         if if_return_data:
-            return train_data, val_data
+            if if_use_val:
+                return train_data, val_data, test_data
+            else:
+                return train_data, val_data
 
         if if_save_data:
             print('save Train/Val data...')
             pickle.dump(train_data, open('../data/' + flnm[0][:-5] + '_Unet_Train.pickle', "wb"))
             pickle.dump(val_data, open('../data/' + flnm[0][:-5] + '_Unet_Val.pickle', "wb"))
+            if if_use_val:
+                pickle.dump(test_data, open('../data/' + flnm[0][:-5] + '_Unet_Test.pickle', "wb"))
             # np.save('../data/' + flnm[0][:-5] + '_TrainData', train_data.data)
             # np.save('../data/' + flnm[0][:-5] + '_TrainPrm', train_data.params)
             # np.save('../data/' + flnm[0][:-5] + '_ValData', val_data.data)
@@ -323,6 +354,9 @@ def run_training(if_training,
                                                num_workers=num_workers, shuffle=True,#)
                                                generator=torch.Generator(device=gen_device))
     val_loader = torch.utils.data.DataLoader(val_data, batch_size=batch_size,
+                                             num_workers=num_workers, shuffle=False,#)
+                                             generator=torch.Generator(device=gen_device))
+    test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size,
                                              num_workers=num_workers, shuffle=False,#)
                                              generator=torch.Generator(device=gen_device))
 
@@ -426,10 +460,10 @@ def run_training(if_training,
         model.to(device)
         model.eval()
         Lx, Ly, Lz = 1., 1., 1.
-        errs = metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot,
+        errs = metrics(test_loader, model, Lx, Ly, Lz, plot, channel_plot,
                        model_name, x_min, x_max, y_min, y_max,
                        t_min, t_max, mode='Unet', initial_step=initial_step, t_train=t_train, if_conditional=if_conditional)
-        pickle.dump(errs, open(model_name+'.pickle', "wb"))
+        pickle.dump(errs, open(model_name+'_test.pickle', "wb"))
             
         return
 
@@ -949,7 +983,7 @@ def run_training(if_training,
     errs = metrics(val_loader, model, Lx, Ly, Lz, plot, channel_plot,
                    model_name, x_min, x_max, y_min, y_max,
                    t_min, t_max, mode='Unet', initial_step=initial_step, t_train=t_train, if_conditional=if_conditional)
-    pickle.dump(errs, open(model_name+'.pickle', "wb"))
+    pickle.dump(errs, open(model_name+'_val.pickle', "wb"))
 
 
 def objective(trial, train_data, val_data):
